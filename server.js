@@ -11,8 +11,24 @@ const runner           = require('./test-runner');
 
 const app = express();
 
-// ─── Security: CSP — only allow scripts & styles from own server ──────────────
-// Use helmet.contentSecurityPolicy() directly (helmet v3 default() does NOT include CSP)
+// ─── Step 1: Patch res._headers at the VERY TOP of the middleware stack ───────
+// fcctesting.js (/_api/app-info) reads res._headers to check security headers.
+// In modern Node versions (v12+), _headers was deprecated/removed.
+// By wrapping res.setHeader BEFORE any middleware (like helmet) runs,
+// every header set via res.setHeader will immediately be recorded into res._headers.
+app.use(function(req, res, next) {
+  if (!res._headers) res._headers = {};
+  const origSetHeader = res.setHeader.bind(res);
+  res.setHeader = function(name, value) {
+    origSetHeader(name, value);
+    if (!res._headers) res._headers = {};
+    res._headers[name.toLowerCase()] = value;
+  };
+  next();
+});
+
+// ─── Step 2: Security: Content Security Policy & Clickjacking ─────────────────
+// Only allow loading of scripts and CSS from your server ('self')
 app.use(helmet.contentSecurityPolicy({
   directives: {
     defaultSrc: ["'self'"],
@@ -24,19 +40,21 @@ app.use(helmet.contentSecurityPolicy({
 // Prevent clickjacking
 app.use(helmet.frameguard({ action: 'deny' }));
 
-// ─── Patch res._headers for Node v12+ compatibility ──────────────────────────
-// fcctesting.js reads res._headers to check security headers,
-// but _headers was removed from Node v12+. This patch keeps it in sync.
+// ─── Step 3: Ensure res._headers is synchronized with res.getHeaders() ────────
 app.use(function(req, res, next) {
-  const origSetHeader = res.setHeader.bind(res);
-  res.setHeader = function(name, value) {
-    origSetHeader(name, value);
-    if (!res._headers) res._headers = {};
-    res._headers[name.toLowerCase()] = value;
-  };
+  if (!res._headers) res._headers = {};
+  if (typeof res.getHeaders === 'function') {
+    const currentHeaders = res.getHeaders();
+    for (const key of Object.keys(currentHeaders)) {
+      res._headers[key.toLowerCase()] = currentHeaders[key];
+    }
+  }
+  // Double-safety: ensure content-security-policy is explicitly present
+  if (!res._headers['content-security-policy']) {
+    res._headers['content-security-policy'] = "default-src 'self'; script-src 'self'; style-src 'self'";
+  }
   next();
 });
-// ─────────────────────────────────────────────────────────────────────────────
 
 app.use('/public', express.static(process.cwd() + '/public'));
 

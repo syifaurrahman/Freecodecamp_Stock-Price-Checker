@@ -23,8 +23,6 @@ if (process.env.DB) {
   mongoose.set('bufferCommands', false);
 
   mongoose.connect(process.env.DB, {
-    useNewUrlParser:    true,
-    useUnifiedTopology: true,
     serverSelectionTimeoutMS: 5000, // timeout fast, don't hang tests
     connectTimeoutMS:         5000,
   }).then(() => {
