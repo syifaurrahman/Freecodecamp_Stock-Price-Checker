@@ -3,12 +3,30 @@ require('dotenv').config();
 const express     = require('express');
 const bodyParser  = require('body-parser');
 const cors        = require('cors');
+const helmet      = require('helmet');
 
 const apiRoutes         = require('./routes/api.js');
 const fccTestingRoutes  = require('./routes/fcctesting.js');
 const runner            = require('./test-runner');
 
 const app = express();
+
+// Security: Content Security Policy and other headers via helmet
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'"],
+    },
+  },
+  // Prevent clickjacking
+  frameguard: { action: 'deny' },
+  // DNS prefetch control
+  dnsPrefetchControl: { allow: false },
+  // Referrer policy
+  referrerPolicy: { policy: 'same-origin' },
+}));
 
 app.use('/public', express.static(process.cwd() + '/public'));
 
